@@ -1,6 +1,10 @@
 #include <U8glib.h>
 #include <Wire.h>
 #include <Servo.h>
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
+
 float RateRoll, RatePitch, RateYaw;
 float AccX, AccY, AccZ;
 float AngleRoll, AnglePitch;
@@ -48,9 +52,10 @@ int milliOld;//t2
 int milliNew;//t1 
 int dt;//t2 - t1
 ////////////////////////BLDC CONTROL//////////////////////////////////////
-
-int esc=7;// # define esc 9;
-Servo bldc;
+Servo servo;
+RF24 radio(7, 8); // CSN, CE
+const byte address[6] = "00001";
+int esc = 3;
 /////////////////////////OLED/////////////////////////////////////
 U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_NONE);
 //////////////////////////////////////////////////////////////
@@ -175,14 +180,35 @@ void servo_setup(void){
   servoRL.write(initialServoRL);
   /////////////////////////////////////////////////////////////////
 }
+
+void bldcSetup(void){
+
+  radio.begin();
+  servo.attach(esc,  1000, 2000);//RX
+  servo.write(0);//RX
+  delay(2000); 
+  radio.openReadingPipe(0, address);
+  radio.setPALevel(RF24_PA_MAX);
+  radio.startListening();
+}
+
+void bldcLoop(void){
+  if (radio.available()) {
+    int x_pos ;
+    radio.read(&x_pos, sizeof(x_pos));
+    Serial.println(x_pos);
+    x_pos = constrain(x_pos,550,1023);
+    int motorSpeed = map(x_pos, 550, 1023, 0,50 );
+    servo.write (motorSpeed) ;
+    
+  }
+}
+
+
+
 void setup() {
   /////////////////////////////////////BLDC////////////////////////////////////////////////
-  bldc.attach(esc,  1000, 2000);//bldc attached to esc with min and max pulse 1000 and 200
-  bldc.write(180);//intial position set to 180 degrees full throttle
-  delay(5000);
-  bldc.write(0);//then set to 0 degrees no throttle
-  delay(2000);
-  bldc.write(25);
+  bldcSetup();
   /////////////////////////////////////////////////////////////////////////////////
   Serial.begin(115200);
   pinMode(13, OUTPUT);
@@ -215,6 +241,9 @@ void setup() {
 
 void loop() {
   gyro_signals();
+  oled_loop();
+  PID();
+  bldcLoop();
 /*  Serial.print("Acceleration X [g]= ");
   Serial.print(AccX);
   Serial.print(" Acceleration Y [g]= ");
@@ -233,7 +262,6 @@ void loop() {
   Serial.print(pitchCorrectionDiff);
   Serial.print(" pitchCorrectionSum= ");
   Serial.println(pitchCorrectionSum);*/
-  delay(100);/////////////////////////most imp
-  oled_loop();
-  PID();
+  //delay(100);/////////////////////////most imp
+
 }     
